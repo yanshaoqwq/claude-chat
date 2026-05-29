@@ -248,7 +248,7 @@ async function runOneStream(provider, model, side, placeholder, signal) {
   const sysText = c.systemPrompt || settings.systemPrompt;
   const body = {
     api_key: provider.apiKey,
-    upstream_url: provider.url,
+    upstream_url: (provider.url || "").replace(/\/+$/, "") + (provider.urlSuffix || "/v1/messages?beta=true"),
     model,
     effort: settings.effort,
     max_tokens: settings.maxTokens,

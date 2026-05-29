@@ -97,7 +97,17 @@ function renderMessage(m, conv) {
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
-  avatar.textContent = m.role === "user" ? "你" : m.role === "assistant" ? "C" : "!";
+  if (m.role === "user" && settings.userAvatarImage) {
+    avatar.style.backgroundImage = `url(${settings.userAvatarImage})`;
+    avatar.style.backgroundSize = "cover";
+    avatar.style.backgroundPosition = "center";
+  } else if (m.role === "assistant" && settings.aiAvatarImage) {
+    avatar.style.backgroundImage = `url(${settings.aiAvatarImage})`;
+    avatar.style.backgroundSize = "cover";
+    avatar.style.backgroundPosition = "center";
+  } else {
+    avatar.textContent = m.role === "user" ? settings.userAvatar : m.role === "assistant" ? settings.aiAvatar : "!";
+  }
   wrap.appendChild(avatar);
 
   const body = document.createElement("div");
@@ -107,7 +117,7 @@ function renderMessage(m, conv) {
   meta.className = "msg-meta";
   const role = document.createElement("span");
   role.className = "msg-role";
-  role.textContent = { user: "You", assistant: "Claude", error: "Error" }[m.role] || m.role;
+  role.textContent = m.role === "user" ? settings.userName : m.role === "assistant" ? settings.aiName : "Error";
   meta.appendChild(role);
 
   if (m.history && m.history.length > 1) {
@@ -152,6 +162,10 @@ function renderMessage(m, conv) {
   }
   if (m.role === "assistant" && !(m.content || "").trim() && !m.streaming) {
     content.style.display = "none";
+  }
+  if (m.streaming && !m.content && !m.thinking && !(m.tools && m.tools.length)) {
+    content.textContent = settings.waitingText || "";
+    content.classList.add("waiting");
   }
   if (m.streaming) {
     const caret = document.createElement("span");
@@ -309,19 +323,19 @@ function renderMsgAttachments(atts, editing, msg) {
       <span class="att-meta">${meta}</span>
     `;
     if (a.kind === "pdf") {
-      const toggle = document.createElement("button");
-      toggle.className = "att-mode";
-      toggle.type = "button";
-      const isText = a.mode === "text";
-      toggle.textContent = isText ? "文本" : "原文件";
-      toggle.title = isText
-        ? `已提取为文本（${a.extracted_chars || 0} 字）。点击改为发送 PDF 原文件`
-        : "发送 PDF 原文件。点击改为发送提取的文本";
-      if (!a.extracted_chars) {
-        toggle.disabled = true;
-        toggle.title = "未能从此 PDF 提取出文本";
-      }
       if (editing) {
+        const toggle = document.createElement("button");
+        toggle.className = "att-mode";
+        toggle.type = "button";
+        const isText = a.mode === "text";
+        toggle.textContent = isText ? "文本" : "原文件";
+        toggle.title = isText
+          ? `已提取为文本（${a.extracted_chars || 0} 字）。点击改为发送 PDF 原文件`
+          : "发送 PDF 原文件。点击改为发送提取的文本";
+        if (!a.extracted_chars) {
+          toggle.disabled = true;
+          toggle.title = "未能从此 PDF 提取出文本";
+        }
         toggle.onclick = (e) => {
           e.stopPropagation();
           a.mode = a.mode === "text" ? "base64" : "text";
@@ -332,10 +346,13 @@ function renderMsgAttachments(atts, editing, msg) {
             ? `已提取为文本（${a.extracted_chars || 0} 字）。点击改为发送 PDF 原文件`
             : "发送 PDF 原文件。点击改为发送提取的文本";
         };
+        el.appendChild(toggle);
       } else {
-        toggle.disabled = true;
+        const desc = document.createElement("span");
+        desc.className = "att-mode-desc";
+        desc.textContent = a.mode === "text" ? "以文本形式发送" : "以原文件形式发送";
+        el.appendChild(desc);
       }
-      el.appendChild(toggle);
     }
     if (a.kind === "pdf" && a.data) {
       el.classList.add("clickable");

@@ -23,7 +23,30 @@ const settings = {
   searchUrl: "",
   searchKey: "",
   webSearchEnabled: false,
+  userName: "You",
+  userAvatar: "你",
+  userAvatarImage: "",
+  aiName: "Claude",
+  aiAvatar: "C",
+  aiAvatarImage: "",
+  waitingText: "正在思考…",
 };
+
+const DEFAULT_URL_SUFFIX = "/v1/messages?beta=true";
+
+function migrateProvider(p) {
+  if (p.urlSuffix !== undefined) return;
+  const u = (p.url || "").trim();
+  if (!u) { p.urlSuffix = DEFAULT_URL_SUFFIX; return; }
+  try {
+    const parsed = new URL(u);
+    p.url = parsed.origin;
+    const path = parsed.pathname + parsed.search + parsed.hash;
+    p.urlSuffix = path && path !== "/" ? path : DEFAULT_URL_SUFFIX;
+  } catch {
+    p.urlSuffix = DEFAULT_URL_SUFFIX;
+  }
+}
 
 let conversations = [];
 let activeId = null;
@@ -159,13 +182,15 @@ function loadAll() {
     settings.providers = [{
       id: newId(),
       name: "默认",
-      url: legacyUrl || "https://cheaprouter.org/v1/messages?beta=true",
+      url: legacyUrl || "https://cheaprouter.org",
+      urlSuffix: DEFAULT_URL_SUFFIX,
       apiKey: legacyKey,
       models: legacyModel ? [legacyModel, "claude-sonnet-4-6"] : ["claude-opus-4-7", "claude-sonnet-4-6"],
     }];
     settings.activeProvider = settings.providers[0].id;
     settings.activeModel = settings.providers[0].models[0];
   }
+  for (const p of settings.providers) migrateProvider(p);
   ensureValidSelections();
 
   try { conversations = JSON.parse(localStorage.getItem(SK.convs) || "[]"); } catch (e) { conversations = []; }
@@ -687,7 +712,9 @@ function startEdit(id) {
       }
       m.content = newContent;
     }
+    const prevScroll = els.messages.scrollTop;
     touchActive(); renderAll();
+    els.messages.scrollTop = prevScroll;
   };
   const cancel = document.createElement("button");
   cancel.className = "ghost"; cancel.textContent = "取消";
@@ -866,7 +893,8 @@ function renderProvidersList(card) {
     detail.className = "provider-row-detail";
     detail.innerHTML = `
       <label class="field"><span>名称</span><input type="text" data-f="name" value="${escapeHtml(p.name || "")}"></label>
-      <label class="field"><span>API URL</span><input type="text" data-f="url" value="${escapeHtml(p.url || "")}"></label>
+      <label class="field"><span>API URL</span><input type="text" data-f="url" value="${escapeHtml(p.url || "")}" placeholder="https://example.com"><em class="field-hint">填入你填入 claude code 的 baseUrl 里的地址即可</em></label>
+      <label class="field"><span>URL 后缀</span><input type="text" data-f="urlSuffix" value="${escapeHtml(p.urlSuffix || DEFAULT_URL_SUFFIX)}" placeholder="${DEFAULT_URL_SUFFIX}"><em class="field-hint">默认为 ${DEFAULT_URL_SUFFIX}，一般不需要修改</em></label>
       <label class="field"><span>API Key</span><input type="password" data-f="apiKey" value="${escapeHtml(p.apiKey || "")}"></label>
       <label class="field"><span>模型列表（逗号或换行分隔）</span><textarea data-f="models" rows="3">${escapeHtml((p.models || []).join("\n"))}</textarea></label>
       <div class="btn-row">
@@ -883,7 +911,8 @@ function renderProvidersList(card) {
       e.stopPropagation();
       const get = (f) => detail.querySelector(`[data-f="${f}"]`).value;
       p.name = get("name").trim() || "未命名";
-      p.url = get("url").trim();
+      p.url = get("url").trim().replace(/\/+$/, "");
+      p.urlSuffix = get("urlSuffix").trim() || DEFAULT_URL_SUFFIX;
       p.apiKey = get("apiKey").trim();
       p.models = get("models").split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
       ensureValidSelections();
@@ -991,6 +1020,86 @@ function openBg() {
       applyOpacity(parseInt(op.value, 10));
       localStorage.setItem(SK.opacity, op.value);
     };
+
+    const userNameInput = card.querySelector("#m_userName");
+    const userAvatarInput = card.querySelector("#m_userAvatar");
+    const aiNameInput = card.querySelector("#m_aiName");
+    const aiAvatarInput = card.querySelector("#m_aiAvatar");
+    const waitingInput = card.querySelector("#m_waitingText");
+    const userPreview = card.querySelector("#m_userAvatarPreview");
+    const aiPreview = card.querySelector("#m_aiAvatarPreview");
+
+    userNameInput.value = settings.userName || "";
+    userAvatarInput.value = settings.userAvatar || "";
+    aiNameInput.value = settings.aiName || "";
+    aiAvatarInput.value = settings.aiAvatar || "";
+    waitingInput.value = settings.waitingText || "";
+
+    const renderPreview = (preview, image, fallback, role) => {
+      preview.className = "avatar-preview msg-avatar " + role;
+      if (image) {
+        preview.style.backgroundImage = `url(${image})`;
+        preview.style.backgroundSize = "cover";
+        preview.style.backgroundPosition = "center";
+        preview.textContent = "";
+      } else {
+        preview.style.backgroundImage = "";
+        preview.textContent = fallback || "";
+      }
+    };
+    renderPreview(userPreview, settings.userAvatarImage, settings.userAvatar, "user");
+    renderPreview(aiPreview, settings.aiAvatarImage, settings.aiAvatar, "assistant");
+
+    const bindAvatar = (uploadBtn, clearBtn, fileInput, preview, key, fallbackInput, role) => {
+      uploadBtn.onclick = () => fileInput.click();
+      fileInput.onchange = (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        if (f.size > 1024 * 1024) { showToast("头像图片过大（最大 1MB）", "error"); return; }
+        const fr = new FileReader();
+        fr.onload = () => {
+          settings[key] = fr.result;
+          saveSettings();
+          renderPreview(preview, fr.result, fallbackInput.value, role);
+          renderMessages();
+        };
+        fr.readAsDataURL(f);
+      };
+      clearBtn.onclick = () => {
+        settings[key] = "";
+        saveSettings();
+        renderPreview(preview, "", fallbackInput.value, role);
+        renderMessages();
+      };
+    };
+    bindAvatar(
+      card.querySelector("#m_userAvatarUpload"), card.querySelector("#m_userAvatarClear"),
+      card.querySelector("#m_userAvatarFile"), userPreview, "userAvatarImage", userAvatarInput, "user",
+    );
+    bindAvatar(
+      card.querySelector("#m_aiAvatarUpload"), card.querySelector("#m_aiAvatarClear"),
+      card.querySelector("#m_aiAvatarFile"), aiPreview, "aiAvatarImage", aiAvatarInput, "assistant",
+    );
+
+    userAvatarInput.oninput = () => {
+      if (!settings.userAvatarImage) renderPreview(userPreview, "", userAvatarInput.value, "user");
+    };
+    aiAvatarInput.oninput = () => {
+      if (!settings.aiAvatarImage) renderPreview(aiPreview, "", aiAvatarInput.value, "assistant");
+    };
+
+    const persist = () => {
+      settings.userName = userNameInput.value.trim() || "You";
+      settings.userAvatar = userAvatarInput.value.trim() || "你";
+      settings.aiName = aiNameInput.value.trim() || "Claude";
+      settings.aiAvatar = aiAvatarInput.value.trim() || "C";
+      settings.waitingText = waitingInput.value;
+      saveSettings();
+      renderMessages();
+    };
+    [userNameInput, userAvatarInput, aiNameInput, aiAvatarInput, waitingInput].forEach((el) => {
+      el.addEventListener("change", persist);
+      el.addEventListener("blur", persist);
+    });
   });
 }
 

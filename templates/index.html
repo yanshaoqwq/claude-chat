@@ -229,18 +229,67 @@
       <button class="icon close-btn" data-close><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
     <div class="modal-body">
-      <div class="bg-grid" id="bgGrid"></div>
-      <div class="btn-row" style="margin-top:14px">
-        <button id="bgUpload">上传自定义图片</button>
-        <input type="file" id="bgFile" accept="image/*" hidden>
-        <span class="hint" style="margin-left:auto">最大约 4MB；存于本地浏览器</span>
-      </div>
-      <div class="form-section" style="margin-top:8px">
-        <label class="field">
+      <section class="form-section">
+        <h3>背景</h3>
+        <div class="bg-grid" id="bgGrid"></div>
+        <div class="btn-row" style="margin-top:14px">
+          <button id="bgUpload">上传自定义图片</button>
+          <input type="file" id="bgFile" accept="image/*" hidden>
+          <span class="hint" style="margin-left:auto">最大约 4MB；存于本地浏览器</span>
+        </div>
+        <label class="field" style="margin-top:10px">
           <span>UI 透明度 <em id="opVal">70%</em></span>
           <input type="range" id="opacity" min="40" max="95" step="5">
         </label>
-      </div>
+      </section>
+
+      <section class="form-section">
+        <h3>用户身份</h3>
+        <div class="field-row">
+          <label class="field"><span>显示名</span>
+            <input type="text" id="m_userName" placeholder="You">
+          </label>
+          <label class="field"><span>头像文字</span>
+            <input type="text" id="m_userAvatar" maxlength="2" placeholder="你">
+          </label>
+        </div>
+        <div class="avatar-upload">
+          <div class="avatar-preview" id="m_userAvatarPreview"></div>
+          <div class="btn-row">
+            <button type="button" id="m_userAvatarUpload">上传头像图片</button>
+            <button type="button" id="m_userAvatarClear" class="ghost">清除</button>
+            <input type="file" id="m_userAvatarFile" accept="image/*" hidden>
+          </div>
+        </div>
+      </section>
+
+      <section class="form-section">
+        <h3>AI 身份</h3>
+        <div class="field-row">
+          <label class="field"><span>显示名</span>
+            <input type="text" id="m_aiName" placeholder="Claude">
+          </label>
+          <label class="field"><span>头像文字</span>
+            <input type="text" id="m_aiAvatar" maxlength="2" placeholder="C">
+          </label>
+        </div>
+        <div class="avatar-upload">
+          <div class="avatar-preview" id="m_aiAvatarPreview"></div>
+          <div class="btn-row">
+            <button type="button" id="m_aiAvatarUpload">上传头像图片</button>
+            <button type="button" id="m_aiAvatarClear" class="ghost">清除</button>
+            <input type="file" id="m_aiAvatarFile" accept="image/*" hidden>
+          </div>
+        </div>
+      </section>
+
+      <section class="form-section">
+        <h3>等待提示</h3>
+        <label class="field">
+          <span>首 token 到达前显示</span>
+          <input type="text" id="m_waitingText" placeholder="正在思考…">
+        </label>
+      </section>
     </div>
     <footer class="modal-footer">
       <button data-close class="primary">完成</button>
