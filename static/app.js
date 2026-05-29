@@ -79,6 +79,8 @@ const ICON = {
   refresh: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>',
   copy: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   more: '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+  merge: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 18l4-4 4 4"/><path d="M12 14V6"/><path d="M4 6h16"/></svg>',
+  branch: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v12"/><path d="M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M18 9c0 4-4 6-12 6"/></svg>',
 };
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
@@ -171,6 +173,7 @@ function loadAll() {
     if (!c.mode) c.mode = "single";
     for (const m of c.messages || []) {
       if (m.side === undefined) m.side = null;
+      if (!m.history) m.history = null;
     }
   }
 
@@ -259,7 +262,12 @@ function touchActive() {
   saveConvs();
 }
 
+function hasDualMessages(c) {
+  return c.messages.some((m) => m.side === "A" || m.side === "B");
+}
+
 // ─── Render: conv list ───────────────────────────────────────────────────────
+
 function renderConvList() {
   els.convList.innerHTML = "";
   const q = searchQuery.trim().toLowerCase();
@@ -311,8 +319,7 @@ function renderConvList() {
 
     const sub = document.createElement("div");
     sub.className = "conv-sub";
-    const modeBadge = conv.mode === "dual" ? "双 · " : "";
-    sub.textContent = `${modeBadge}${conv.messages.length} 条 · ${fmtTime(conv.updatedAt)}`;
+    sub.textContent = `${conv.messages.length} 条 · ${fmtTime(conv.updatedAt)}`;
     el.appendChild(sub);
 
     if (snippet) {
@@ -434,7 +441,7 @@ function confirmDelete(conv) {
   });
 }
 
-// ─── Custom dialogs (主题配色) ──────────────────────────────────────────────
+// ─── Custom dialogs ─────────────────────────────────────────────────────────
 function showConfirmDialog({ title = "确认", message, danger = false, okText = "确定", cancelText = "取消", onOk }) {
   openModal("confirmTpl", (card) => {
     card.querySelector(".dialog-title").textContent = title;
@@ -491,7 +498,7 @@ function startInlineTitleEdit() {
   const input = $("titleInput");
   if (!input) return;
   input.value = c.title;
-  btn.hidden = true;
+  btn.style.visibility = "hidden";
   input.hidden = false;
   input.focus();
   input.select();
@@ -503,7 +510,7 @@ function startInlineTitleEdit() {
       if (v && v !== c.title) renameConversation(c.id, v);
     }
     input.hidden = true;
-    btn.hidden = false;
+    btn.style.visibility = "";
     input.removeEventListener("blur", onBlur);
     input.removeEventListener("keydown", onKey);
   };
@@ -516,6 +523,7 @@ function startInlineTitleEdit() {
   input.addEventListener("keydown", onKey);
 }
 
+
 // ─── Render: header ──────────────────────────────────────────────────────────
 function renderHeader() {
   const c = getActive();
@@ -525,10 +533,16 @@ function renderHeader() {
   const charsTxt = chars > 9999 ? (chars / 1000).toFixed(1) + "k" : chars;
   els.convStat.textContent = `${c.messages.length} 条消息 · ${charsTxt} 字符`;
 
+  const forceDual = hasDualMessages(c);
   els.modeSegment.querySelectorAll(".mode-seg-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === c.mode);
-    b.disabled = c.messages.length > 0;
-    b.title = c.messages.length > 0 ? "已有消息的对话不能切换模式" : "";
+    if (forceDual && b.dataset.mode === "single") {
+      b.disabled = true;
+      b.title = "对话中存在双模型消息，无法切换为 Direct";
+    } else {
+      b.disabled = false;
+      b.title = "";
+    }
   });
 
   renderModelPickers(c);
@@ -620,331 +634,11 @@ function buildPickerGroup(tag, currentProv, currentModel, onChange) {
   return group;
 }
 
-// ─── Render: messages ────────────────────────────────────────────────────────
-function renderMessages() {
-  els.messages.innerHTML = "";
-  const c = getActive();
-  if (!c || c.messages.length === 0) {
-    renderEmptyMessages();
-    return;
-  }
-  if (c.mode === "dual") {
-    renderMessagesDual(c);
-  } else {
-    for (const m of c.messages) els.messages.appendChild(renderMessage(m));
-  }
-  scrollToBottom();
-}
-
-function renderMessagesDual(c) {
-  let i = 0;
-  while (i < c.messages.length) {
-    const m = c.messages[i];
-    if (m.role === "user") {
-      els.messages.appendChild(renderMessage(m));
-      i++;
-      continue;
-    }
-    let sideA = m.side === "A" ? m : null;
-    let sideB = m.side === "B" ? m : null;
-    let j = i + 1;
-    while (j < c.messages.length && c.messages[j].role !== "user") {
-      const mj = c.messages[j];
-      if (mj.side === "A" && !sideA) sideA = mj;
-      else if (mj.side === "B" && !sideB) sideB = mj;
-      else break;
-      j++;
-      if (sideA && sideB) break;
-    }
-    els.messages.appendChild(renderDualRow(sideA, sideB));
-    i = Math.max(j, i + 1);
-  }
-}
-
-function renderDualRow(sideA, sideB) {
-  const row = document.createElement("div");
-  row.className = "msg-row-dual";
-  row.appendChild(renderDualColumn("A", sideA));
-  row.appendChild(renderDualColumn("B", sideB));
-  return row;
-}
-
-function renderDualColumn(side, msg) {
-  const col = document.createElement("div");
-  col.className = "msg-dual-col";
-  const label = document.createElement("div");
-  label.className = "msg-side-label";
-  const pid = side === "A" ? settings.providerA : settings.providerB;
-  const mdl = side === "A" ? settings.modelA : settings.modelB;
-  const pname = (getProvider(pid) || {}).name || "?";
-  if (msg && msg.providerName) {
-    label.textContent = `${side} · ${msg.providerName} / ${msg.model || mdl}`;
-  } else {
-    label.textContent = `${side} · ${pname} / ${mdl}`;
-  }
-  col.appendChild(label);
-  if (msg) {
-    col.appendChild(renderMessage(msg));
-  } else {
-    const ph = document.createElement("div");
-    ph.className = "msg-dual-placeholder";
-    ph.textContent = "（暂无）";
-    col.appendChild(ph);
-  }
-  return col;
-}
-
-function renderEmptyMessages() {
-  const div = document.createElement("div");
-  div.className = "empty-state";
-  div.innerHTML = `
-    <div class="empty-icon">
-      <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-    </div>
-    <h2>开始一段对话</h2>
-    <p>发送消息或在设置里配置提供商。</p>`;
-  els.messages.appendChild(div);
-}
-
-function renderMessage(m) {
-  const wrap = document.createElement("div");
-  wrap.className = "msg " + m.role;
-  wrap.dataset.id = m.id;
-
-  const avatar = document.createElement("div");
-  avatar.className = "msg-avatar";
-  avatar.textContent = m.role === "user" ? "你" : m.role === "assistant" ? "C" : "!";
-  wrap.appendChild(avatar);
-
-  const body = document.createElement("div");
-  body.className = "msg-body";
-
-  const meta = document.createElement("div");
-  meta.className = "msg-meta";
-  const role = document.createElement("span");
-  role.className = "msg-role";
-  role.textContent = { user: "You", assistant: "Claude", error: "Error" }[m.role] || m.role;
-  meta.appendChild(role);
-  body.appendChild(meta);
-
-  if (m.thinking) body.appendChild(renderThinking(m.thinking));
-  if (m.tools && m.tools.length) {
-    for (const t of m.tools) body.appendChild(renderToolCard(t));
-  }
-  if (m.attachments && m.attachments.length) body.appendChild(renderMsgAttachments(m.attachments));
-
-  const content = document.createElement("div");
-  content.className = "msg-content";
-  if (m.role === "assistant" && !m.streaming) {
-    content.innerHTML = renderMarkdown(m.content || "");
-    attachCodeBlockExtras(content);
-  } else {
-    content.textContent = m.content || "";
-    if (m.streaming) content.dataset.streaming = "1";
-  }
-  if (m.role === "assistant" && !(m.content || "").trim() && !m.streaming) {
-    content.style.display = "none";
-  }
-  if (m.streaming) {
-    const caret = document.createElement("span");
-    caret.className = "streaming-caret";
-    content.appendChild(caret);
-  }
-  body.appendChild(content);
-
-  const actions = document.createElement("div");
-  actions.className = "msg-actions";
-  actions.appendChild(makeIconBtn(ICON.edit, "编辑", () => startEdit(m.id)));
-  if (m.role === "user") {
-    actions.appendChild(makeIconBtn(ICON.refresh, "重发（截断到这里）", () => resendFrom(m.id)));
-    if (m.content) {
-      actions.appendChild(makeIconBtn(ICON.copy, "复制", () => {
-        navigator.clipboard.writeText(m.content).then(() => showToast("已复制"));
-      }));
-    }
-  }
-  if (m.role === "assistant" && m.content) {
-    actions.appendChild(makeIconBtn(ICON.refresh, "重新生成这条回复", () => regenerateAt(m.id)));
-    actions.appendChild(makeIconBtn(ICON.copy, "复制", () => {
-      navigator.clipboard.writeText(m.content).then(() => showToast("已复制"));
-    }));
-  }
-  actions.appendChild(makeIconBtn(ICON.trash, "删除", () => deleteMessage(m.id)));
-  body.appendChild(actions);
-
-  wrap.appendChild(body);
-  return wrap;
-}
-
-function makeIconBtn(svg, title, onClick) {
-  const b = document.createElement("button");
-  b.className = "icon"; b.title = title; b.innerHTML = svg; b.onclick = onClick;
-  return b;
-}
-
-function renderThinking(text) {
-  const det = document.createElement("details");
-  det.className = "thinking";
-  const sum = document.createElement("summary");
-  sum.textContent = "思考过程";
-  det.appendChild(sum);
-  const body = document.createElement("div");
-  body.className = "thinking-body";
-  body.textContent = text;
-  det.appendChild(body);
-  return det;
-}
-
-function renderToolCard(t) {
-  const card = document.createElement("div");
-  card.className = "tool-card";
-  card.dataset.toolId = t.id;
-  if (t.error) card.classList.add("error");
-  if (t.status === "done" || t.status === "error") card.classList.add("done");
-
-  const head = document.createElement("div");
-  head.className = "tool-card-head";
-  head.innerHTML = `
-    <span class="tool-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
-    <span class="tool-card-title">web_search</span>
-    <span class="tool-card-query"></span>
-    <span class="tool-card-status"><span class="dot"></span><span class="status-text"></span></span>
-    <span class="tool-card-toggle">▸</span>
-  `;
-  card.appendChild(head);
-
-  const body = document.createElement("div");
-  body.className = "tool-card-body";
-  card.appendChild(body);
-
-  head.onclick = () => card.classList.toggle("open");
-
-  fillToolCard(card, t);
-  return card;
-}
-
-function fillToolCard(card, t) {
-  const head = card.querySelector(".tool-card-head");
-  const queryEl = head.querySelector(".tool-card-query");
-  queryEl.textContent = t.query ? `"${t.query}"` : (t.input ? "参数解析中…" : "等待参数…");
-  const statusText = head.querySelector(".status-text");
-  card.classList.toggle("error", !!t.error);
-  card.classList.toggle("done", t.status === "done" || t.status === "error");
-  if (t.error) statusText.textContent = "失败";
-  else if (t.status === "done") statusText.textContent = "已完成";
-  else if (t.status === "running") statusText.textContent = "搜索中…";
-  else statusText.textContent = "调用中…";
-
-  const body = card.querySelector(".tool-card-body");
-  body.innerHTML = "";
-
-  const argsObj = t.input || (t.query ? { query: t.query } : {});
-  const argsSec = document.createElement("div");
-  argsSec.className = "tool-section";
-  argsSec.innerHTML =
-    `<div class="tool-section-label">调用参数</div>` +
-    `<pre class="tool-args">${escapeHtml(JSON.stringify(argsObj, null, 2))}</pre>`;
-  body.appendChild(argsSec);
-
-  if (t.error) {
-    const sec = document.createElement("div");
-    sec.className = "tool-section";
-    sec.innerHTML = `<div class="tool-section-label">错误</div><div>${escapeHtml(t.error)}</div>`;
-    body.appendChild(sec);
-    return;
-  }
-  const r = t.result;
-  if (!r) return;
-  if (r.content) {
-    const sec = document.createElement("div");
-    sec.className = "tool-section";
-    sec.innerHTML = `<div class="tool-section-label">搜索结果</div><div class="tool-summary">${renderMarkdown(r.content)}</div>`;
-    body.appendChild(sec);
-  }
-}
-
-function renderMsgAttachments(atts) {
-  const wrap = document.createElement("div");
-  wrap.className = "msg-attachments";
-  for (const a of atts) {
-    if (a.kind === "image" && a.data) {
-      const img = document.createElement("img");
-      img.className = "msg-attachment-image";
-      img.src = `data:${a.media_type};base64,${a.data}`;
-      img.alt = a.name || "image";
-      img.title = a.name || "";
-      img.onclick = () => openImageViewer(img.src, a.name);
-      wrap.appendChild(img);
-      continue;
-    }
-    const el = document.createElement("div");
-    el.className = "msg-attachment";
-    let meta;
-    if (a.kind === "pdf") meta = `PDF · ${(a.size / 1024).toFixed(0)}KB`;
-    else if (a.kind === "image") meta = `图片 · ${(a.size / 1024).toFixed(0)}KB`;
-    else meta = `${a.chars > 9999 ? (a.chars / 1000).toFixed(1) + "k" : a.chars} 字`;
-    el.innerHTML = `
-      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      <span class="att-name">${escapeHtml(a.name)}</span>
-      <span class="att-meta">${meta}</span>
-    `;
-    if (a.kind === "pdf" && a.data) {
-      el.classList.add("clickable");
-      el.onclick = () => openPdfViewer(a);
-    }
-    wrap.appendChild(el);
-  }
-  return wrap;
-}
-
-function openPdfViewer(a) {
-  const blob = b64ToBlob(a.data, a.media_type || "application/pdf");
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank", "noopener");
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
-function openImageViewer(src, name) {
-  const overlay = document.createElement("div");
-  overlay.className = "img-viewer";
-  overlay.innerHTML = `<img src="${src}" alt="${escapeHtml(name || "")}">`;
-  overlay.onclick = () => overlay.remove();
-  document.body.appendChild(overlay);
-}
-
-function b64ToBlob(b64, mime) {
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return new Blob([arr], { type: mime });
-}
-
-function attachCodeBlockExtras(root) {
-  root.querySelectorAll("pre > code").forEach((code) => {
-    const pre = code.parentElement;
-    if (pre.querySelector(".copy-btn")) return;
-    const btn = document.createElement("button");
-    btn.className = "copy-btn"; btn.textContent = "复制";
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      navigator.clipboard.writeText(code.textContent).then(
-        () => { btn.textContent = "已复制"; setTimeout(() => (btn.textContent = "复制"), 1200); },
-        () => showToast("复制失败", "error"),
-      );
-    };
-    pre.appendChild(btn);
-  });
-}
-
-function renderAll() { renderConvList(); renderHeader(); renderMessages(); }
-
 // ─── Message ops ─────────────────────────────────────────────────────────────
 function pushMessage(role, content, extra = {}) {
   const c = getActive(); if (!c) return null;
   if (draftConv && draftConv.id === c.id) commitDraft();
-  const m = { id: newId(), role, content, ts: Date.now(), side: null, ...extra };
+  const m = { id: newId(), role, content, ts: Date.now(), side: null, history: null, historyIndex: 0, ...extra };
   c.messages.push(m);
   touchActive();
   renderMessages(); renderHeader(); renderConvList();
@@ -966,6 +660,12 @@ function startEdit(id) {
   const content = body.querySelector(".msg-content");
   content.style.display = "none";
 
+  const oldAtts = body.querySelector(".msg-attachments");
+  if (oldAtts && m.attachments && m.attachments.length) {
+    const editable = renderMsgAttachments(m.attachments, true, m);
+    oldAtts.replaceWith(editable);
+  }
+
   const ta = document.createElement("textarea");
   ta.className = "msg-edit"; ta.value = m.content;
   body.appendChild(ta);
@@ -977,7 +677,18 @@ function startEdit(id) {
   actions.className = "msg-edit-actions";
   const save = document.createElement("button");
   save.className = "primary"; save.textContent = "保存";
-  save.onclick = () => { m.content = ta.value; touchActive(); renderAll(); };
+  save.onclick = () => {
+    const newContent = ta.value;
+    if (newContent !== m.content) {
+      if (m.role !== "error") {
+        if (!m.history) m.history = [{ content: m.content, thinking: m.thinking || "", tools: m.tools || [] }];
+        m.history.push({ content: newContent, thinking: "", tools: [] });
+        m.historyIndex = m.history.length - 1;
+      }
+      m.content = newContent;
+    }
+    touchActive(); renderAll();
+  };
   const cancel = document.createElement("button");
   cancel.className = "ghost"; cancel.textContent = "取消";
   cancel.onclick = () => renderMessages();
@@ -994,6 +705,10 @@ function resendFrom(id) {
   const c = getActive(); if (!c) return;
   const idx = c.messages.findIndex((m) => m.id === id);
   if (idx < 0) return;
+  const userMsg = c.messages[idx];
+  if (userMsg.role !== "error") {
+    if (!userMsg.history) userMsg.history = [{ content: userMsg.content, thinking: "", tools: [], attachments: userMsg.attachments }];
+  }
   c.messages = c.messages.slice(0, idx + 1);
   touchActive(); renderAll();
   streamReply();
@@ -1003,391 +718,18 @@ function regenerateAt(id) {
   const c = getActive(); if (!c) return;
   const m = c.messages.find((x) => x.id === id);
   if (!m) return;
+  if (m.role !== "error" && m.content) {
+    if (!m.history) m.history = [{ content: m.content, thinking: m.thinking || "", tools: m.tools || [] }];
+  }
   const idx = c.messages.indexOf(m);
   c.messages.splice(idx, 1);
   touchActive(); renderAll();
   if (c.mode === "dual" && (m.side === "A" || m.side === "B")) {
-    streamReplyOneSide(m.side);
+    streamReplyOneSide(m.side, m);
   } else {
-    streamReply();
+    streamReplyWithHistory(m);
   }
 }
-
-// ─── Streaming ───────────────────────────────────────────────────────────────
-async function send() {
-  const text = els.input.value.trim();
-  const hasAtt = pendingAttachments.length > 0;
-  if (!text && !hasAtt) return;
-  const atts = pendingAttachments.filter((a) => a.status === "ready").map((a) => ({
-    name: a.name, kind: a.kind, media_type: a.media_type, data: a.data,
-    text: a.text, chars: a.chars, size: a.size,
-    mode: a.mode, extracted_text: a.extracted_text, extracted_chars: a.extracted_chars,
-    pages: a.pages,
-  }));
-  pendingAttachments = [];
-  renderAttachments();
-  pushMessage("user", text, { attachments: atts, side: null });
-  els.input.value = ""; autoGrow(els.input);
-  await streamReply();
-}
-
-async function uploadFile(f) {
-  if (f.size > 20 * 1024 * 1024) {
-    showToast(`${f.name} 过大（最大 20MB）`, "error");
-    return;
-  }
-  const placeholder = { id: newId(), name: f.name, status: "uploading" };
-  pendingAttachments.push(placeholder);
-  renderAttachments();
-  try {
-    const fd = new FormData();
-    fd.append("file", f);
-    const r = await fetch("/api/extract", { method: "POST", body: fd });
-    const data = await r.json();
-    if (!data.ok) throw new Error(data.error || "解析失败");
-    placeholder.status = "ready";
-    placeholder.kind = data.kind;
-    placeholder.size = data.size;
-    if (data.kind === "pdf") {
-      placeholder.media_type = data.media_type;
-      placeholder.data = data.data;
-      placeholder.extracted_text = data.extracted_text || "";
-      placeholder.extracted_chars = data.extracted_chars || 0;
-      placeholder.pages = data.pages || 0;
-      placeholder.mode = placeholder.extracted_chars > 0 ? "text" : "base64";
-    } else if (data.kind === "image") {
-      placeholder.media_type = data.media_type;
-      placeholder.data = data.data;
-    } else {
-      placeholder.text = data.text;
-      placeholder.chars = data.chars;
-    }
-    renderAttachments();
-    showToast(`已附加 ${f.name}`);
-  } catch (e) {
-    pendingAttachments = pendingAttachments.filter((x) => x.id !== placeholder.id);
-    renderAttachments();
-    showToast(`${f.name}: ${e.message}`, "error");
-  }
-}
-
-function attMeta(a) {
-  if (a.status === "uploading") return "解析中…";
-  if (a.kind === "pdf") return `PDF · ${(a.size / 1024).toFixed(0)}KB`;
-  if (a.kind === "image") return `图片 · ${(a.size / 1024).toFixed(0)}KB`;
-  return `${a.chars > 9999 ? (a.chars / 1000).toFixed(1) + "k" : a.chars} 字`;
-}
-
-function renderAttachments() {
-  const wrap = els.attachments;
-  wrap.innerHTML = "";
-  if (!pendingAttachments.length) { wrap.hidden = true; return; }
-  wrap.hidden = false;
-  for (const a of pendingAttachments) {
-    const el = document.createElement("div");
-    el.className = "attachment" + (a.status === "uploading" ? " uploading" : "");
-    if (a.kind === "image" && a.data) {
-      const img = document.createElement("img");
-      img.className = "att-thumb";
-      img.src = `data:${a.media_type};base64,${a.data}`;
-      el.appendChild(img);
-    } else {
-      const icon = document.createElement("span");
-      icon.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
-      el.appendChild(icon);
-    }
-    const name = document.createElement("span");
-    name.className = "att-name"; name.textContent = a.name;
-    const meta = document.createElement("span");
-    meta.className = "att-meta"; meta.textContent = attMeta(a);
-    el.appendChild(name); el.appendChild(meta);
-
-    if (a.kind === "pdf" && a.status === "ready") {
-      const toggle = document.createElement("button");
-      toggle.className = "att-mode";
-      toggle.type = "button";
-      const isText = a.mode === "text";
-      toggle.textContent = isText ? "文本" : "原文件";
-      toggle.title = isText
-        ? `已提取为文本（${a.extracted_chars} 字 / ${a.pages} 页）。点击改为发送 PDF 原文件`
-        : "发送 PDF 原文件。点击改为发送提取的文本";
-      if (!a.extracted_chars) {
-        toggle.disabled = true;
-        toggle.title = "未能从此 PDF 提取出文本，将发送原文件";
-      }
-      toggle.onclick = (e) => {
-        e.stopPropagation();
-        a.mode = a.mode === "text" ? "base64" : "text";
-        renderAttachments();
-      };
-      el.appendChild(toggle);
-    }
-
-    const close = document.createElement("button");
-    close.className = "att-close"; close.title = "移除";
-    close.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-    close.onclick = () => {
-      pendingAttachments = pendingAttachments.filter((x) => x.id !== a.id);
-      renderAttachments();
-    };
-    el.appendChild(close);
-    wrap.appendChild(el);
-  }
-}
-
-function preflightCheck(side) {
-  const pid = side === "A" ? settings.providerA : side === "B" ? settings.providerB : settings.activeProvider;
-  const mdl = side === "A" ? settings.modelA : side === "B" ? settings.modelB : settings.activeModel;
-  const p = getProvider(pid);
-  if (!p || !p.apiKey) {
-    showToast(`${side ? side + " 侧" : ""}提供商未配置 API Key`, "error");
-    openSettings();
-    return null;
-  }
-  if (!mdl) {
-    showToast(`${side ? side + " 侧" : ""}未选择模型`, "error");
-    openSettings();
-    return null;
-  }
-  return { provider: p, model: mdl };
-}
-
-async function streamReply() {
-  const c = getActive(); if (!c) return;
-
-  if (settings.webSearchEnabled && (!settings.searchUrl || !settings.searchKey)) {
-    showToast("已启用联网搜索，请在设置里填写搜索 URL 和 Key", "error");
-    openSettings();
-    return;
-  }
-
-  if (c.mode === "dual") {
-    const a = preflightCheck("A");
-    const b = preflightCheck("B");
-    if (!a || !b) return;
-    const phA = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side: "A", providerName: a.provider.name, model: a.model });
-    const phB = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side: "B", providerName: b.provider.name, model: b.model });
-    setBusy(true);
-    currentAbort = new AbortController();
-    try {
-      await Promise.allSettled([
-        runOneStream(a.provider, a.model, "A", phA, currentAbort.signal),
-        runOneStream(b.provider, b.model, "B", phB, currentAbort.signal),
-      ]);
-    } finally {
-      setBusy(false); currentAbort = null;
-    }
-    return;
-  }
-
-  const sel = preflightCheck(null);
-  if (!sel) return;
-  const placeholder = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side: null, providerName: sel.provider.name, model: sel.model });
-  setBusy(true);
-  currentAbort = new AbortController();
-  try {
-    await runOneStream(sel.provider, sel.model, null, placeholder, currentAbort.signal);
-  } finally {
-    setBusy(false); currentAbort = null;
-  }
-}
-
-async function streamReplyOneSide(side) {
-  const c = getActive(); if (!c) return;
-  if (settings.webSearchEnabled && (!settings.searchUrl || !settings.searchKey)) {
-    showToast("已启用联网搜索，请在设置里填写搜索 URL 和 Key", "error");
-    openSettings();
-    return;
-  }
-  const sel = preflightCheck(side);
-  if (!sel) return;
-  const placeholder = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side, providerName: sel.provider.name, model: sel.model });
-  setBusy(true);
-  currentAbort = new AbortController();
-  try {
-    await runOneStream(sel.provider, sel.model, side, placeholder, currentAbort.signal);
-  } finally {
-    setBusy(false); currentAbort = null;
-  }
-}
-
-function buildMessagesForSide(c, placeholderId, side) {
-  return c.messages
-    .filter((m) => m.id !== placeholderId)
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .filter((m) => m.role === "user" || m.side === side)
-    .map((m) => ({ role: m.role, content: m.content, attachments: m.attachments || [] }));
-}
-
-async function runOneStream(provider, model, side, placeholder, signal) {
-  const c = getActive();
-  const sysText = c.systemPrompt || settings.systemPrompt;
-  const body = {
-    api_key: provider.apiKey,
-    upstream_url: provider.url,
-    model,
-    effort: settings.effort,
-    max_tokens: settings.maxTokens,
-    system: sysText,
-    web_search_enabled: settings.webSearchEnabled,
-    search_url: settings.searchUrl,
-    search_key: settings.searchKey,
-    messages: buildMessagesForSide(c, placeholder.id, side),
-  };
-  try {
-    const resp = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal,
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok && resp.status !== 200) {
-      const errText = await resp.text();
-      placeholder.role = "error";
-      placeholder.content = `HTTP ${resp.status}: ${errText}`;
-      placeholder.streaming = false;
-      saveConvs(); renderMessages();
-      return;
-    }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let saw = false;
-    outer: while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let nl;
-      while ((nl = buffer.indexOf("\n\n")) !== -1) {
-        const event = buffer.slice(0, nl);
-        buffer = buffer.slice(nl + 2);
-        const line = event.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-        const data = line.slice(6);
-        if (data.trim() === "[DONE]") break outer;
-        try { handleEvent(JSON.parse(data), placeholder); saw = true; } catch (e) {}
-      }
-    }
-    placeholder.streaming = false;
-    if (!saw && !placeholder.content) {
-      placeholder.role = "error";
-      placeholder.content = "未收到任何数据";
-    }
-    touchActive(); renderMessages(); renderHeader();
-  } catch (e) {
-    if (e.name === "AbortError") {
-      placeholder.streaming = false;
-      placeholder.content += "\n\n_[已停止]_";
-    } else {
-      placeholder.role = "error";
-      placeholder.content = "请求失败: " + e.message;
-      placeholder.streaming = false;
-    }
-    saveConvs(); renderMessages();
-  }
-}
-
-function handleEvent(evt, msg) {
-  const type = evt.type;
-  if (type === "error") {
-    msg.role = "error";
-    msg.content = evt.message || JSON.stringify(evt);
-    msg.streaming = false;
-    updateStreaming(msg);
-  } else if (type === "content_block_delta") {
-    const d = evt.delta || {};
-    if (d.type === "text_delta" || d.type === undefined) msg.content += d.text || "";
-    else if (d.type === "thinking_delta") msg.thinking = (msg.thinking || "") + (d.thinking || "");
-    updateStreaming(msg);
-  } else if (type === "tool_use_start") {
-    msg.tools = msg.tools || [];
-    msg.tools.push({ id: evt.tool_id, name: evt.name, status: "running", query: "" });
-    if (msg.content && !msg.content.endsWith("\n\n")) msg.content += "\n\n";
-    if (msg.thinking) msg.thinking += "\n\n— — —\n\n";
-    updateStreaming(msg);
-  } else if (type === "tool_use_input") {
-    const t = (msg.tools || []).find((x) => x.id === evt.tool_id);
-    if (t) {
-      t.query = (evt.input && evt.input.query) || "";
-      t.input = evt.input;
-      updateToolCard(msg, t);
-    }
-  } else if (type === "tool_result") {
-    const t = (msg.tools || []).find((x) => x.id === evt.tool_id);
-    if (t) {
-      if (evt.error) { t.error = evt.error; t.status = "error"; }
-      else { t.result = evt.result || {}; t.status = "done"; }
-      updateToolCard(msg, t);
-    }
-  }
-}
-
-function findMsgEl(msg) {
-  return els.messages.querySelector(`.msg[data-id="${msg.id}"]`);
-}
-
-function updateStreaming(msg) {
-  const wrap = findMsgEl(msg);
-  if (!wrap) { renderMessages(); return; }
-  const body = wrap.querySelector(".msg-body");
-  const content = body.querySelector(".msg-content");
-  let thinkingEl = body.querySelector(".thinking");
-  if (msg.thinking) {
-    if (!thinkingEl) {
-      thinkingEl = renderThinking(msg.thinking);
-      const firstTool = body.querySelector(".tool-card");
-      body.insertBefore(thinkingEl, firstTool || content);
-    } else {
-      thinkingEl.querySelector(".thinking-body").textContent = msg.thinking;
-    }
-  } else if (thinkingEl) {
-    thinkingEl.remove();
-  }
-  for (const t of msg.tools || []) {
-    if (!body.querySelector(`.tool-card[data-tool-id="${t.id}"]`)) {
-      body.insertBefore(renderToolCard(t), content);
-    }
-  }
-  if (msg.role === "error") {
-    wrap.classList.remove("assistant"); wrap.classList.add("error");
-    const avatar = wrap.querySelector(".msg-avatar"); if (avatar) avatar.textContent = "!";
-    const role = wrap.querySelector(".msg-role"); if (role) role.textContent = "Error";
-  }
-  content.textContent = msg.content;
-  if (msg.streaming) content.dataset.streaming = "1";
-  else delete content.dataset.streaming;
-  if (!msg.content && (msg.tools && msg.tools.length)) {
-    content.style.display = "none";
-  } else {
-    content.style.display = "";
-  }
-  if (msg.streaming) {
-    const caret = document.createElement("span");
-    caret.className = "streaming-caret";
-    content.appendChild(caret);
-  }
-  if (scrollPinned) scrollToBottom();
-}
-
-function updateToolCard(msg, t) {
-  const wrap = findMsgEl(msg);
-  if (!wrap) return;
-  const card = wrap.querySelector(`.tool-card[data-tool-id="${t.id}"]`);
-  if (card) fillToolCard(card, t);
-  if (scrollPinned) scrollToBottom();
-}
-
-function setBusy(busy) {
-  els.sendBtn.disabled = busy;
-  els.stopBtn.disabled = !busy;
-  els.input.disabled = busy;
-}
-
-function autoGrow(ta) {
-  ta.style.height = "auto";
-  ta.style.height = Math.min(ta.scrollHeight, 280) + "px";
-}
-function scrollToBottom() { els.messages.scrollTop = els.messages.scrollHeight; }
 
 // ─── Modal ───────────────────────────────────────────────────────────────────
 function openModal(tplId, onMount) {
@@ -1412,6 +754,15 @@ function escClose(e) { if (e.key === "Escape") closeModal(); }
 // ─── Settings UI ─────────────────────────────────────────────────────────────
 function openSettings() {
   openModal("settingsTpl", (card) => {
+    card.querySelectorAll(".settings-tab").forEach((tab) => {
+      tab.onclick = () => {
+        card.querySelectorAll(".settings-tab").forEach((t) => t.classList.remove("active"));
+        card.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+        tab.classList.add("active");
+        card.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`).classList.add("active");
+      };
+    });
+
     renderProvidersList(card);
 
     fillModelSelect(card.querySelector("#m_activeProvider"), card.querySelector("#m_activeModel"), settings.activeProvider, settings.activeModel);
@@ -1423,6 +774,11 @@ function openSettings() {
     card.querySelector("#m_effort").value = settings.effort;
     card.querySelector("#m_maxTokens").value = settings.maxTokens;
     card.querySelector("#m_system").value = settings.systemPrompt;
+
+    fetch("/api/system/config").then((r) => r.json()).then((cfg) => {
+      card.querySelector("#m_host").value = cfg.host || "0.0.0.0";
+      card.querySelector("#m_port").value = cfg.port || 5000;
+    }).catch(() => {});
 
     card.querySelector("#m_addProvider").onclick = () => {
       settings.providers.push({
@@ -1450,6 +806,17 @@ function openSettings() {
       saveSettings();
       updateWebSearchUI();
       renderHeader();
+
+      const newHost = card.querySelector("#m_host").value.trim();
+      const newPort = card.querySelector("#m_port").value.trim();
+      if (newHost || newPort) {
+        fetch("/api/system/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ host: newHost || "0.0.0.0", port: parseInt(newPort, 10) || 5000 }),
+        }).catch(() => {});
+      }
+
       showToast("设置已保存");
       closeModal();
     };
@@ -1576,6 +943,7 @@ function refreshSelects(card) {
   fillModelSelect(card.querySelector("#m_providerB"), card.querySelector("#m_modelB"), settings.providerB, settings.modelB);
 }
 
+
 // ─── Background ──────────────────────────────────────────────────────────────
 function openBg() {
   openModal("bgTpl", (card) => {
@@ -1670,7 +1038,10 @@ async function importAll(file) {
       conversations = data.conversations;
       for (const c of conversations) {
         if (!c.mode) c.mode = "single";
-        for (const m of c.messages || []) if (m.side === undefined) m.side = null;
+        for (const m of c.messages || []) {
+          if (m.side === undefined) m.side = null;
+          if (!m.history) m.history = null;
+        }
       }
       activeId = conversations[0]?.id;
       if (!activeId) activeId = createConversation().id;
@@ -1690,8 +1061,8 @@ async function importAll(file) {
 // ─── Mode toggle ─────────────────────────────────────────────────────────────
 function setMode(mode) {
   const c = getActive(); if (!c) return;
-  if (c.messages.length > 0) {
-    showToast("已有消息的对话不能切换模式，请新建对话");
+  if (mode === "single" && hasDualMessages(c)) {
+    showToast("对话中存在双模型消息，无法切换为 Direct");
     return;
   }
   c.mode = mode;

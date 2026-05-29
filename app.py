@@ -15,6 +15,26 @@ from flask import Flask, Response, jsonify, render_template, request, stream_wit
 
 DEFAULT_UPSTREAM_URL = "https://cheaprouter.org/v1/messages?beta=true"
 DEVICE_ID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".device_id")
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+DEFAULT_CONFIG = {"host": "0.0.0.0", "port": 5000}
+
+
+def _load_config():
+    if os.path.isfile(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+            return {**DEFAULT_CONFIG, **data}
+        except (IOError, json.JSONDecodeError):
+            pass
+    return dict(DEFAULT_CONFIG)
+
+
+def _save_config(cfg):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
 
 BETA_FLAGS = "context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24"
 
@@ -152,9 +172,8 @@ def messages_to_api(messages):
                     if not txt:
                         continue
                     blocks.append({
-                        "type": "document",
-                        "source": {"type": "text", "media_type": "text/plain", "data": txt},
-                        "title": name,
+                        "type": "text",
+                        "text": f"[文档：{name}]\n\n{txt}",
                     })
                     continue
                 data = a.get("data")
@@ -589,6 +608,26 @@ def sys_restart():
     return jsonify({"ok": True, "action": "restart"})
 
 
+@app.route("/api/system/config", methods=["GET"])
+def get_config():
+    return jsonify(_load_config())
+
+
+@app.route("/api/system/config", methods=["POST"])
+def set_config():
+    body = request.get_json(force=True) or {}
+    cfg = _load_config()
+    if "host" in body:
+        cfg["host"] = str(body["host"]).strip() or "0.0.0.0"
+    if "port" in body:
+        try:
+            cfg["port"] = int(body["port"])
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "端口必须为数字"}), 400
+    _save_config(cfg)
+    return jsonify({"ok": True, "config": cfg})
+
+
 def _delayed_exit(delay, code):
     time.sleep(delay)
     os._exit(code)
@@ -721,6 +760,7 @@ def _event_to_sse(evt):
 
 if __name__ == "__main__":
     if os.environ.get("CHATUI_CHILD") == "1":
-        app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+        cfg = _load_config()
+        app.run(host=cfg["host"], port=cfg["port"], debug=False, threaded=True)
     else:
         _supervise()
