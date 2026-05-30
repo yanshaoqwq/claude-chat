@@ -194,7 +194,10 @@ function streamReplyWithHistory(oldMsg) {
     try {
       await runOneStream(sel.provider, sel.model, null, placeholder, currentAbort.signal);
       if (placeholder.role !== "error" && placeholder.history) {
-        placeholder.history.push({ content: placeholder.content, thinking: placeholder.thinking || "", tools: placeholder.tools || [] });
+        placeholder.history.push({
+          content: placeholder.content, thinking: placeholder.thinking || "",
+          tools: placeholder.tools || [], followups: [],
+        });
         placeholder.historyIndex = placeholder.history.length - 1;
         touchActive();
         renderMessages();
@@ -225,7 +228,10 @@ async function streamReplyOneSide(side, oldMsg) {
   try {
     await runOneStream(sel.provider, sel.model, side, placeholder, currentAbort.signal);
     if (placeholder.role !== "error" && placeholder.history) {
-      placeholder.history.push({ content: placeholder.content, thinking: placeholder.thinking || "", tools: placeholder.tools || [] });
+      placeholder.history.push({
+        content: placeholder.content, thinking: placeholder.thinking || "",
+        tools: placeholder.tools || [], followups: [],
+      });
       placeholder.historyIndex = placeholder.history.length - 1;
       touchActive();
       renderMessages();

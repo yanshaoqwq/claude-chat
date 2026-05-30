@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import io
 import json
@@ -37,6 +38,8 @@ def _save_config(cfg):
 
 
 BETA_FLAGS = "context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24"
+
+DEBUG = False
 
 SEARCH_TOOL = {
     "name": "web_search",
@@ -214,6 +217,12 @@ def messages_to_api(messages):
         if not blocks:
             continue
         out.append({"role": role, "content": blocks})
+
+    # cache_control 标记每请求最多 4 个：system 占 1，第一条 + 最后一条各占 1（共 3）
+    if out:
+        out[0]["content"][-1]["cache_control"] = {"type": "ephemeral"}
+        if len(out) > 1:
+            out[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
     return out
 
 
@@ -294,6 +303,18 @@ def _stream_one_request(api_key, upstream_url, system_text, api_messages, model,
             "session_id": session_id,
         })
     }
+
+    if DEBUG:
+        dump_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "last_payload.json")
+        try:
+            with open(dump_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "url": upstream_url,
+                    "headers": {k: v for k, v in headers.items() if k.lower() != "authorization"},
+                    "payload": payload,
+                }, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            print(f"[debug] dump failed: {e}", file=sys.stderr)
 
     try:
         r = requests.post(upstream_url, headers=headers, json=payload, stream=True, timeout=600)
@@ -759,6 +780,12 @@ def _event_to_sse(evt):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true",
+                        help="dump 每次上游请求到 last_payload.json")
+    args, _ = parser.parse_known_args()
+    DEBUG = args.debug
+
     if os.environ.get("CHATUI_CHILD") == "1":
         cfg = _load_config()
         app.run(host=cfg["host"], port=cfg["port"], debug=False, threaded=True)

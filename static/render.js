@@ -120,29 +120,6 @@ function renderMessage(m, conv) {
   role.textContent = m.role === "user" ? settings.userName : m.role === "assistant" ? settings.aiName : "Error";
   meta.appendChild(role);
 
-  if (m.history && m.history.length > 1) {
-    const histNav = document.createElement("span");
-    histNav.className = "msg-history-nav";
-    const idx = m.historyIndex || 0;
-    const prev = document.createElement("button");
-    prev.className = "hist-btn";
-    prev.textContent = "‹";
-    prev.disabled = idx <= 0;
-    prev.onclick = (e) => { e.stopPropagation(); navigateHistory(m, -1); };
-    const label = document.createElement("span");
-    label.className = "hist-label";
-    label.textContent = `${idx + 1}/${m.history.length}`;
-    const next = document.createElement("button");
-    next.className = "hist-btn";
-    next.textContent = "›";
-    next.disabled = idx >= m.history.length - 1;
-    next.onclick = (e) => { e.stopPropagation(); navigateHistory(m, 1); };
-    histNav.appendChild(prev);
-    histNav.appendChild(label);
-    histNav.appendChild(next);
-    meta.appendChild(histNav);
-  }
-
   body.appendChild(meta);
 
   if (m.thinking) body.appendChild(renderThinking(m.thinking));
@@ -199,20 +176,50 @@ function renderMessage(m, conv) {
     }
   }
   actions.appendChild(makeIconBtn(ICON.trash, "删除", () => deleteMessage(m.id)));
+  if (m.history && m.history.length > 1) {
+    const histNav = document.createElement("span");
+    histNav.className = "msg-history-nav";
+    const idx = m.historyIndex || 0;
+    const prev = document.createElement("button");
+    prev.className = "hist-btn";
+    prev.textContent = "‹";
+    prev.disabled = idx <= 0;
+    prev.onclick = (e) => { e.stopPropagation(); navigateHistory(m, -1); };
+    const label = document.createElement("span");
+    label.className = "hist-label";
+    label.textContent = `${idx + 1}/${m.history.length}`;
+    const next = document.createElement("button");
+    next.className = "hist-btn";
+    next.textContent = "›";
+    next.disabled = idx >= m.history.length - 1;
+    next.onclick = (e) => { e.stopPropagation(); navigateHistory(m, 1); };
+    histNav.appendChild(prev);
+    histNav.appendChild(label);
+    histNav.appendChild(next);
+    actions.appendChild(histNav);
+  }
   body.appendChild(actions);
 
   wrap.appendChild(body);
   return wrap;
 }
 function navigateHistory(m, dir) {
-  const idx = (m.historyIndex || 0) + dir;
-  if (idx < 0 || idx >= m.history.length) return;
-  m.historyIndex = idx;
-  const entry = m.history[idx];
+  const c = getActive(); if (!c) return;
+  const cur = m.historyIndex || 0;
+  const target = cur + dir;
+  if (target < 0 || target >= m.history.length) return;
+  const idx = c.messages.indexOf(m);
+  if (idx < 0) return;
+
+  // 切走前先把当前下文快照回当前 entry，再切到目标 entry 并恢复其下文
+  m.history[cur].followups = c.messages.slice(idx + 1);
+  m.historyIndex = target;
+  const entry = m.history[target];
   m.content = entry.content;
   m.thinking = entry.thinking || "";
   m.tools = entry.tools || [];
   m.attachments = entry.attachments || m.attachments;
+  c.messages = c.messages.slice(0, idx + 1).concat(entry.followups || []);
   touchActive();
   renderMessages();
   renderHeader();

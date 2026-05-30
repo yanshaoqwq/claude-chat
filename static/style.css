@@ -456,7 +456,7 @@ button.icon {
 /* 历史记录导航 */
 .msg-history-nav {
   display: inline-flex; align-items: center; gap: 2px;
-  margin-left: 6px;
+  margin-left: auto;
 }
 .hist-btn {
   width: 20px; height: 20px; padding: 0;

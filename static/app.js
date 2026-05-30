@@ -705,12 +705,26 @@ function startEdit(id) {
   save.onclick = () => {
     const newContent = ta.value;
     if (newContent !== m.content) {
+      const idx = c.messages.indexOf(m);
+      const followups = idx >= 0 ? c.messages.slice(idx + 1) : [];
       if (m.role !== "error") {
-        if (!m.history) m.history = [{ content: m.content, thinking: m.thinking || "", tools: m.tools || [] }];
-        m.history.push({ content: newContent, thinking: "", tools: [] });
+        if (!m.history) {
+          m.history = [{
+            content: m.content, thinking: m.thinking || "", tools: m.tools || [],
+            attachments: m.attachments, followups,
+          }];
+          m.historyIndex = 0;
+        } else {
+          m.history[m.historyIndex || 0].followups = followups;
+        }
+        m.history.push({
+          content: newContent, thinking: "", tools: [],
+          attachments: m.attachments, followups: [],
+        });
         m.historyIndex = m.history.length - 1;
       }
       m.content = newContent;
+      if (idx >= 0) c.messages = c.messages.slice(0, idx + 1);
     }
     const prevScroll = els.messages.scrollTop;
     touchActive(); renderAll();
@@ -733,8 +747,22 @@ function resendFrom(id) {
   const idx = c.messages.findIndex((m) => m.id === id);
   if (idx < 0) return;
   const userMsg = c.messages[idx];
+  const followups = c.messages.slice(idx + 1);
   if (userMsg.role !== "error") {
-    if (!userMsg.history) userMsg.history = [{ content: userMsg.content, thinking: "", tools: [], attachments: userMsg.attachments }];
+    if (!userMsg.history) {
+      userMsg.history = [{
+        content: userMsg.content, thinking: "", tools: [],
+        attachments: userMsg.attachments, followups,
+      }];
+      userMsg.historyIndex = 0;
+    } else {
+      userMsg.history[userMsg.historyIndex || 0].followups = followups;
+    }
+    userMsg.history.push({
+      content: userMsg.content, thinking: "", tools: [],
+      attachments: userMsg.attachments, followups: [],
+    });
+    userMsg.historyIndex = userMsg.history.length - 1;
   }
   c.messages = c.messages.slice(0, idx + 1);
   touchActive(); renderAll();
@@ -745,15 +773,31 @@ function regenerateAt(id) {
   const c = getActive(); if (!c) return;
   const m = c.messages.find((x) => x.id === id);
   if (!m) return;
-  if (m.role !== "error" && m.content) {
-    if (!m.history) m.history = [{ content: m.content, thinking: m.thinking || "", tools: m.tools || [] }];
-  }
   const idx = c.messages.indexOf(m);
-  c.messages.splice(idx, 1);
-  touchActive(); renderAll();
-  if (c.mode === "dual" && (m.side === "A" || m.side === "B")) {
+  const isDualSide = c.mode === "dual" && (m.side === "A" || m.side === "B");
+  let hi = idx + 1;
+  if (isDualSide) {
+    while (hi < c.messages.length && c.messages[hi].role !== "user") hi++;
+  }
+  const followups = isDualSide ? c.messages.slice(hi) : c.messages.slice(idx + 1);
+  if (m.role !== "error" && m.content) {
+    if (!m.history) {
+      m.history = [{
+        content: m.content, thinking: m.thinking || "", tools: m.tools || [],
+        attachments: m.attachments, followups,
+      }];
+      m.historyIndex = 0;
+    } else {
+      m.history[m.historyIndex || 0].followups = followups;
+    }
+  }
+  if (isDualSide) {
+    c.messages = c.messages.slice(0, idx).concat(c.messages.slice(idx + 1, hi));
+    touchActive(); renderAll();
     streamReplyOneSide(m.side, m);
   } else {
+    c.messages = c.messages.slice(0, idx);
+    touchActive(); renderAll();
     streamReplyWithHistory(m);
   }
 }

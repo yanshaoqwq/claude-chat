@@ -11,3 +11,4 @@ venv/
 .DS_Store
 search_quota.json
 CLAUDE.md
+last_payload.json
