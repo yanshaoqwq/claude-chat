@@ -150,14 +150,14 @@ async function streamReply() {
     const phA = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side: "A", providerName: a.provider.name, model: a.model });
     const phB = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side: "B", providerName: b.provider.name, model: b.model });
     setBusy(true);
-    currentAbort = new AbortController();
+    c.abortController = new AbortController();
     try {
       await Promise.allSettled([
-        runOneStream(a.provider, a.model, "A", phA, currentAbort.signal),
-        runOneStream(b.provider, b.model, "B", phB, currentAbort.signal),
+        runOneStream(a.provider, a.model, "A", phA, c.abortController.signal),
+        runOneStream(b.provider, b.model, "B", phB, c.abortController.signal),
       ]);
     } finally {
-      setBusy(false); currentAbort = null;
+      setBusy(false); c.abortController = null;
     }
     return;
   }
@@ -165,11 +165,11 @@ async function streamReply() {
   if (!sel) return;
   const placeholder = pushMessage("assistant", "", { streaming: true, thinking: "", tools: [], side: null, providerName: sel.provider.name, model: sel.model });
   setBusy(true);
-  currentAbort = new AbortController();
+  c.abortController = new AbortController();
   try {
-    await runOneStream(sel.provider, sel.model, null, placeholder, currentAbort.signal);
+    await runOneStream(sel.provider, sel.model, null, placeholder, c.abortController.signal);
   } finally {
-    setBusy(false); currentAbort = null;
+    setBusy(false); c.abortController = null;
   }
 }
 
@@ -189,10 +189,10 @@ function streamReplyWithHistory(oldMsg) {
     historyIndex: oldMsg && oldMsg.history ? oldMsg.history.length : 0,
   });
   setBusy(true);
-  currentAbort = new AbortController();
+  c.abortController = new AbortController();
   (async () => {
     try {
-      await runOneStream(sel.provider, sel.model, null, placeholder, currentAbort.signal);
+      await runOneStream(sel.provider, sel.model, null, placeholder, c.abortController.signal);
       if (placeholder.role !== "error" && placeholder.history) {
         placeholder.history.push({
           content: placeholder.content, thinking: placeholder.thinking || "",
@@ -203,7 +203,7 @@ function streamReplyWithHistory(oldMsg) {
         renderMessages();
       }
     } finally {
-      setBusy(false); currentAbort = null;
+      setBusy(false); c.abortController = null;
     }
   })();
 }
@@ -224,9 +224,9 @@ async function streamReplyOneSide(side, oldMsg) {
     historyIndex: oldMsg && oldMsg.history ? oldMsg.history.length : 0,
   });
   setBusy(true);
-  currentAbort = new AbortController();
+  c.abortController = new AbortController();
   try {
-    await runOneStream(sel.provider, sel.model, side, placeholder, currentAbort.signal);
+    await runOneStream(sel.provider, sel.model, side, placeholder, c.abortController.signal);
     if (placeholder.role !== "error" && placeholder.history) {
       placeholder.history.push({
         content: placeholder.content, thinking: placeholder.thinking || "",
@@ -237,7 +237,7 @@ async function streamReplyOneSide(side, oldMsg) {
       renderMessages();
     }
   } finally {
-    setBusy(false); currentAbort = null;
+    setBusy(false); c.abortController = null;
   }
 }
 
@@ -408,9 +408,11 @@ function updateToolCard(msg, t) {
 }
 
 function setBusy(busy) {
-  els.sendBtn.disabled = busy;
-  els.stopBtn.disabled = !busy;
-  els.input.disabled = busy;
+  const c = getActive();
+  if (c) {
+    c.busy = busy;
+    updateInputState();
+  }
 }
 
 function autoGrow(ta) {

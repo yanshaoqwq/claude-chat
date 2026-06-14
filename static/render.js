@@ -162,7 +162,7 @@ function renderMessage(m, conv) {
       }));
     }
   }
-  if (m.role === "assistant" && m.content) {
+  if ((m.role === "assistant" || m.role === "error") && m.content) {
     actions.appendChild(makeIconBtn(ICON.refresh, "重新生成这条回复", () => regenerateAt(m.id)));
     actions.appendChild(makeIconBtn(ICON.copy, "复制", () => {
       navigator.clipboard.writeText(m.content).then(() => showToast("已复制"));

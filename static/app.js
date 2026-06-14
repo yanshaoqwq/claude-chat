@@ -50,7 +50,6 @@ function migrateProvider(p) {
 
 let conversations = [];
 let activeId = null;
-let currentAbort = null;
 let searchQuery = "";
 let scrollPinned = true;
 let pendingAttachments = [];
@@ -196,6 +195,8 @@ function loadAll() {
   try { conversations = JSON.parse(localStorage.getItem(SK.convs) || "[]"); } catch (e) { conversations = []; }
   for (const c of conversations) {
     if (!c.mode) c.mode = "single";
+    if (c.busy === undefined) c.busy = false;
+    if (c.abortController === undefined) c.abortController = null;
     for (const m of c.messages || []) {
       if (m.side === undefined) m.side = null;
       if (!m.history) m.history = null;
@@ -224,6 +225,8 @@ function createConversation() {
     messages: [],
     systemPrompt: "",
     mode: "single",
+    busy: false,
+    abortController: null,
   };
   draftConv = c;
   return c;
@@ -247,6 +250,15 @@ function setActive(id) {
   activeId = id;
   saveActive();
   renderAll();
+  updateInputState();
+}
+
+function updateInputState() {
+  const c = getActive();
+  const busy = c ? c.busy : false;
+  els.sendBtn.disabled = busy;
+  els.stopBtn.disabled = !busy;
+  els.input.disabled = busy;
 }
 
 function deleteConversation(id) {
@@ -729,6 +741,11 @@ function startEdit(id) {
     const prevScroll = els.messages.scrollTop;
     touchActive(); renderAll();
     els.messages.scrollTop = prevScroll;
+    if (m.role === "user" && newContent !== m.content && followups.length > 0) {
+      if (confirm("已修改用户消息并截断下文，是否重新生成回复？")) {
+        streamReply();
+      }
+    }
   };
   const cancel = document.createElement("button");
   cancel.className = "ghost"; cancel.textContent = "取消";
@@ -1316,7 +1333,10 @@ els.modeSegment.addEventListener("click", (e) => {
 });
 
 els.sendBtn.onclick = send;
-els.stopBtn.onclick = () => { if (currentAbort) currentAbort.abort(); };
+els.stopBtn.onclick = () => {
+  const c = getActive();
+  if (c && c.abortController) c.abortController.abort();
+};
 
 els.input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
