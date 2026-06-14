@@ -64,9 +64,28 @@ function renderDualColumn(side, msg, conv) {
   } else {
     label.textContent = `${side} · ${pname} / ${mdl}`;
   }
+  if (msg && (msg.role === "assistant" || msg.role === "error")) {
+    const expandBtn = document.createElement("button");
+    expandBtn.className = "msg-expand-icon";
+    expandBtn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
+    expandBtn.title = "展开全屏查看";
+    expandBtn.onclick = (e) => {
+      e.stopPropagation();
+      openMessageFullscreen(msg, conv);
+    };
+    label.appendChild(expandBtn);
+  }
   col.appendChild(label);
   if (msg) {
-    col.appendChild(renderMessage(msg, conv));
+    const msgEl = renderMessage(msg, conv);
+    const actions = msgEl.querySelector(".msg-actions");
+    if (actions) {
+      actions.remove();
+      col.appendChild(msgEl);
+      col.appendChild(actions);
+    } else {
+      col.appendChild(msgEl);
+    }
   } else {
     const ph = document.createElement("div");
     ph.className = "msg-dual-placeholder";
@@ -444,4 +463,51 @@ function branchMessage(id) {
   touchActive(); renderAll();
   streamReplyOneSide("B", null);
   showToast("已创建分支，正在生成 B 侧回复…");
+}
+
+function openMessageFullscreen(m, conv) {
+  const overlay = document.createElement("div");
+  overlay.className = "msg-fullscreen-overlay";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "msg-fullscreen-close";
+  closeBtn.innerHTML = "×";
+  closeBtn.onclick = () => overlay.remove();
+
+  const content = document.createElement("div");
+  content.className = "msg-fullscreen-content";
+
+  if (m.thinking) {
+    const thinkingTitle = document.createElement("h3");
+    thinkingTitle.textContent = "思考过程";
+    thinkingTitle.style.marginBottom = "12px";
+    thinkingTitle.style.fontSize = "14px";
+    thinkingTitle.style.color = "var(--ink-mute)";
+    content.appendChild(thinkingTitle);
+
+    const thinkingText = document.createElement("pre");
+    thinkingText.textContent = m.thinking;
+    thinkingText.style.whiteSpace = "pre-wrap";
+    thinkingText.style.marginBottom = "24px";
+    thinkingText.style.fontSize = "13px";
+    thinkingText.style.lineHeight = "1.6";
+    thinkingText.style.color = "var(--ink)";
+    content.appendChild(thinkingText);
+  }
+
+  const mainText = document.createElement("div");
+  mainText.innerHTML = renderMarkdown(m.content || "");
+  mainText.style.fontSize = "14px";
+  mainText.style.lineHeight = "1.7";
+  mainText.style.color = "var(--ink)";
+  attachCodeBlockExtras(mainText);
+  content.appendChild(mainText);
+
+  overlay.appendChild(closeBtn);
+  overlay.appendChild(content);
+  overlay.onclick = (e) => {
+    if (e.target === overlay) overlay.remove();
+  };
+
+  document.body.appendChild(overlay);
 }
