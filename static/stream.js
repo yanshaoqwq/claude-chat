@@ -357,6 +357,8 @@ function findMsgEl(msg) {
 }
 
 function updateStreaming(msg) {
+  const c = getActive();
+  if (!c || !c.messages.includes(msg)) return;
   const wrap = findMsgEl(msg);
   if (!wrap) { renderMessages(); return; }
   const body = wrap.querySelector(".msg-body");
@@ -400,6 +402,8 @@ function updateStreaming(msg) {
 }
 
 function updateToolCard(msg, t) {
+  const c = getActive();
+  if (!c || !c.messages.includes(msg)) return;
   const wrap = findMsgEl(msg);
   if (!wrap) return;
   const card = wrap.querySelector(`.tool-card[data-tool-id="${t.id}"]`);
